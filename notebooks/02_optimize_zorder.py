@@ -59,6 +59,7 @@ for batch in range(200):
 dt = DeltaTable(table_path)
 files_before = len(dt.files())
 print(f"Files before OPTIMIZE: {files_before}")
+assert files_before >= 100, "Rubric requires at least 100 files before OPTIMIZE"
 
 # %% [markdown]
 # ## 2. Benchmark BEFORE optimize
@@ -104,6 +105,7 @@ dt.optimize.z_order(["user_id"], target_size=TARGET_SIZE)
 dt = DeltaTable(table_path)  # refresh
 files_after = len(dt.files())
 print(f"Files after OPTIMIZE+ZORDER: {files_after}  (was {files_before})")
+assert files_after < files_before, "OPTIMIZE should reduce the number of files"
 
 # %% [markdown]
 # ## 4. Benchmark AFTER
@@ -149,12 +151,17 @@ for mn, mx in sorted(ranges):
 #   Speedup ≥ 3×              (wall-clock, noisy on local SSD)
 #   Files-pruned ratio ≥ 10×  (deterministic, the truer Z-order metric)
 pruned_ratio = files_after / max(hits, 1)
+speedup = before / max(after, 1e-6)
 print(
     f"\n──── Z-order deliverable metrics ────\n"
-    f"  Speedup (wall-clock):   {before/max(after, 1e-6):>5.1f}×   (target ≥ 3×)\n"
+    f"  Speedup (wall-clock):   {speedup:>5.1f}×   (target ≥ 3×)\n"
     f"  Files-pruned ratio:     {pruned_ratio:>5.1f}×   (target ≥ 10×)   "
     f"[{hits} of {files_after} files cover user_id={TARGET_USER}]"
 )
+assert speedup >= 3 or pruned_ratio >= 10, (
+    "Deliverable requires speedup >= 3x OR files-pruned ratio >= 10x"
+)
+print("\nNB2 deliverable PASS: OPTIMIZE+ZORDER meets the rubric target")
 
 # %% [markdown]
 # ## ✅ Deliverable check

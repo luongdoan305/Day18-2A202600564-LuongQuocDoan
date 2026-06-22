@@ -14,6 +14,8 @@
 
 # %%
 import _setup  # noqa: F401  -- adds scripts/ to sys.path
+from pathlib import Path
+
 import polars as pl
 import duckdb
 from deltalake import DeltaTable, write_deltalake
@@ -119,16 +121,29 @@ print(gold_df)
 # Slide-5 deliverable: "Gold p50/p95/cost qua ≥ 7 ngày". Make that explicit.
 n_dates = gold_df.select("date").n_unique()
 n_models = gold_df.select("model").n_unique()
+expected_metric_columns = ["p50_latency_ms", "p95_latency_ms", "cost_usd", "error_rate"]
 print(
     f"\n──── Gold deliverable metrics ────\n"
     f"  Distinct dates:   {n_dates:>3}   (target ≥ 7)\n"
     f"  Distinct models:  {n_models:>3}\n"
     f"  Total Gold rows:  {gold_df.height:>3}   (= dates × models)"
 )
+
+for label, table in [("Bronze", BRONZE), ("Silver", SILVER), ("Gold", GOLD)]:
+    exists = (Path(table) / "_delta_log").exists()
+    print(f"{label} Delta table exists: {exists}  ({table})")
+    assert exists, f"{label} table should exist on disk with a _delta_log"
+
 assert n_dates >= 7, (
     f"Gold has only {n_dates} dates — slide deliverable requires ≥ 7. "
     "Re-run `make data` (the generator spreads across 7 UTC days)."
 )
+assert n_models == 3, "Gold should contain all 3 models"
+assert gold_df.height >= n_dates * n_models, "Gold should have date x model rows"
+assert all(column in gold_df.columns for column in expected_metric_columns)
+assert gold_df.select(expected_metric_columns).null_count().sum_horizontal().item() == 0
+assert gold_df.select((pl.col("cost_usd") > 0).all()).item()
+print("\nNB4 deliverable PASS: Bronze/Silver/Gold and Gold metrics meet the rubric targets")
 
 # %% [markdown]
 # ## ✅ Deliverable check

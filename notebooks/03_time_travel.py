@@ -57,7 +57,9 @@ t0 = time.time()
     .when_matched_update_all()
     .when_not_matched_insert_all()
     .execute())
-print(f"MERGE 100K rows: {time.time()-t0:.2f}s")
+merge_seconds = time.time() - t0
+print(f"MERGE 100K rows: {merge_seconds:.2f}s")
+assert merge_seconds < 60, "Rubric requires MERGE 100K rows in < 60s"
 
 # v3 — simulate bad data
 bad = pl.DataFrame({
@@ -95,7 +97,9 @@ print(f"v1 schema:    {v1_cols}")
 t0 = time.time()
 dt = DeltaTable(table_path)
 dt.restore(2)
-print(f"RESTORE → v2: {time.time()-t0:.2f}s   (target < 30s)")
+restore_seconds = time.time() - t0
+print(f"RESTORE → v2: {restore_seconds:.2f}s   (target < 30s)")
+assert restore_seconds < 30, "Rubric requires RESTORE in < 30s"
 
 # Verify the bad rows are gone — use delta-rs's native filter pushdown.
 # (DuckDB's delta extension as of 1.5.x is stricter about post-RESTORE
@@ -104,6 +108,7 @@ print(f"RESTORE → v2: {time.time()-t0:.2f}s   (target < 30s)")
 dt_after = DeltaTable(table_path)
 bad_count = dt_after.to_pyarrow_table(filters=[("score", "<", 0)]).num_rows
 print(f"Rows with score<0 after restore: {bad_count}  (expected 0)")
+assert bad_count == 0, "RESTORE should remove all rows with score < 0"
 
 # %% [markdown]
 # ## 5. history() — final audit trail (now includes the RESTORE)
@@ -113,6 +118,9 @@ final_history = DeltaTable(table_path).history()
 for h in final_history:
     print(f"  v{h['version']:>2}  {h['operation']:<25}")
 print(f"\nTotal versions: {len(final_history)}  (target ≥ 5)")
+assert len(final_history) >= 5, "Rubric requires at least 5 history versions"
+assert final_history[0]["operation"] == "RESTORE", "Final history should include RESTORE"
+print("\nNB3 deliverable PASS: MERGE, RESTORE, and history meet the rubric targets")
 
 # %% [markdown]
 # ## ✅ Deliverable check

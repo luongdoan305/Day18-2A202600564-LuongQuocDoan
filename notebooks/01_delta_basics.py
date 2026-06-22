@@ -15,6 +15,8 @@
 
 # %%
 import _setup  # noqa: F401  -- adds scripts/ to sys.path (file-relative)
+from pathlib import Path
+
 import polars as pl
 from deltalake import DeltaTable, write_deltalake
 from lakehouse import path, reset
@@ -47,17 +49,31 @@ print("\nHistory:")
 for h in dt.history():
     print(f"  v{h['version']}  {h['operation']}  {h.get('operationMetrics', {})}")
 
+log_dir = Path(table_path) / "_delta_log"
+log_files = sorted(log_dir.glob("*.json"))
+print("\n_delta_log JSON files:")
+for log_file in log_files:
+    print(f"  {log_file.relative_to(Path.cwd())}")
+
+assert log_files, "Expected at least one Delta transaction log JSON file"
+print("\nFirst transaction log JSON preview:")
+print(log_files[0].read_text().splitlines()[0])
+
 # %% [markdown]
 # ## 3. Schema enforcement — try to write a wrong schema
 
 # %%
 bad = pl.DataFrame({"id": [4], "name": ["dan"], "age": ["thirty"], "city": ["Hue"]})
+bad_write_blocked = False
 try:
     write_deltalake(table_path, bad.to_arrow(), mode="append")
     print("UNEXPECTED: bad write succeeded — schema enforcement broken")
 except Exception as e:
+    bad_write_blocked = True
     msg = str(e).splitlines()[0][:120]
     print(f"BLOCKED by schema enforcement (expected): {type(e).__name__}: {msg}")
+
+assert bad_write_blocked, "Schema enforcement must block age=str append"
 
 # %% [markdown]
 # ## 4. Schema evolution (opt-in)
@@ -70,7 +86,12 @@ write_deltalake(table_path, new.to_arrow(), mode="append", schema_mode="merge")
 dt = DeltaTable(table_path)
 # Sort by id so the printout is stable across reruns — Delta does not
 # preserve write-order across appends.
-print(pl.from_arrow(dt.to_pyarrow_table()).sort("id"))
+users = pl.from_arrow(dt.to_pyarrow_table()).sort("id")
+print(users)
+
+assert "tier" in users.columns, 'Expected schema_mode="merge" to add tier'
+assert users.filter(pl.col("id") == 4).select("tier").item() == "premium"
+print('\nschema_mode="merge" added the `tier` column (expected)')
 
 # %% [markdown]
 # ## 5. Bonus — query with DuckDB (zero copy)
